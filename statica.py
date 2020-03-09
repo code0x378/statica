@@ -23,8 +23,23 @@ from jinja2 import Environment, PackageLoader
 from markdown2 import markdown
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+from decouple import config, Csv
 
-import settings
+#
+# Project Settings
+#
+SERVER_HOST=config('SERVER_HOST', default="localhost", cast=str)
+SERVER_PORT=config('SERVER_PORT', default=8000, cast=int)
+
+SRC_FOLDER = config('SRC_FOLDER', default="src", cast=str)
+OUTPUT_PATH = config('OUTPUT_PATH', default="dist", cast=str)
+INPUT_PATH = config('INPUT_PATH', default="src/content", cast=str)
+STATIC_FOLDER = config('STATIC_FOLDER', default="src/static", cast=str)
+TEMPLATES_FOLDER = config('TEMPLATES_FOLDER', default="src/templates", cast=str)
+ASSETS_INPUT_PATH = config('ASSETS_INPUT_PATH', default="src/assets", cast=str)
+ASSETS_OUTPUT_PATH = config('ASSETS_OUTPUT_PATH', default="dist/assets", cast=str)
+SECTIONS=config('SECTIONS', default="", cast=Csv())
+
 
 #
 # Logging
@@ -67,7 +82,7 @@ class Statica():
     def __copy_files(self, src, dest):
         try:
             for filename in os.listdir(src):
-                filepath = os.path.join(settings.STATIC_FOLDER, filename)
+                filepath = os.path.join(STATIC_FOLDER, filename)
                 shutil.copy(os.path.abspath(filepath), os.path.abspath(dest))
         except OSError as e:
             print('Files not copied. Error: %s' % e)
@@ -124,52 +139,52 @@ class Statica():
         self.clean()
         logger.info('Building site...')
 
-        env = Environment(loader=PackageLoader('statica', settings.TEMPLATES_FOLDER))
+        env = Environment(loader=PackageLoader('statica', TEMPLATES_FOLDER))
         #
         # Build sections (i.e. blog, news, events, etc)
         #
         items = {}
-        for section in settings.SECTIONS:
+        for section in SECTIONS:
             if section == "pages":
                 items[section] = self.__build_content(env.get_template('pages.html'),
-                                                      f"{settings.INPUT_PATH}/{section}",
-                                                      f"{settings.OUTPUT_PATH}")
+                                                      f"{INPUT_PATH}/{section}",
+                                                      f"{OUTPUT_PATH}")
             else:
                 items[section] = self.__build_content(env.get_template(f"{section}_show.html"),
-                                                      f"{settings.INPUT_PATH}/{section}",
-                                                      f"{settings.OUTPUT_PATH}/{section}",
+                                                      f"{INPUT_PATH}/{section}",
+                                                      f"{OUTPUT_PATH}/{section}",
                                                       env.get_template(f"{section}_list.html"))
         #
         # Homepage Index
         #
         home_html = env.get_template('home.html').render(items=items, splitFile=os.path.splitext)
 
-        with open(f"{settings.OUTPUT_PATH}/index.html", 'w') as file:
+        with open(f"{OUTPUT_PATH}/index.html", 'w') as file:
             file.write(home_html)
 
     def run(self):
         logger.info("Starting server...")
-        web_dir = os.path.join(os.path.dirname(__file__), settings.OUTPUT_PATH)
+        web_dir = os.path.join(os.path.dirname(__file__), OUTPUT_PATH)
         os.chdir(web_dir)
-        server_address = (settings.SERVER_HOST, settings.SERVER_PORT)
-        logger.info(f"Server running on http://{settings.SERVER_HOST}:{settings.SERVER_PORT}/")
+        server_address = (SERVER_HOST, SERVER_PORT)
+        logger.info(f"Server running on http://{SERVER_HOST}:{SERVER_PORT}/")
         httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
         httpd.serve_forever()
 
     def clean(self):
         logger.info("Cleaning...")
-        for filename in os.listdir(settings.OUTPUT_PATH):
-            filepath = os.path.join(settings.OUTPUT_PATH, filename)
+        for filename in os.listdir(OUTPUT_PATH):
+            filepath = os.path.join(OUTPUT_PATH, filename)
             try:
                 shutil.rmtree(filepath)
             except OSError:
                 os.remove(filepath)
-        self.__copy_folder(settings.ASSETS_INPUT_PATH, settings.ASSETS_OUTPUT_PATH)
-        self.__copy_files(settings.STATIC_FOLDER, settings.OUTPUT_PATH)
+        self.__copy_folder(ASSETS_INPUT_PATH, ASSETS_OUTPUT_PATH)
+        self.__copy_files(STATIC_FOLDER, OUTPUT_PATH)
 
     def watch(self):
         logger.info("Watching for changes...")
-        file_path = os.path.join(os.path.abspath(os.getcwd()), settings.SRC_FOLDER)
+        file_path = os.path.join(os.path.abspath(os.getcwd()), SRC_FOLDER)
         event_handler = StaticaChangeHandler(self)
         my_observer = Observer()
         my_observer.schedule(event_handler, file_path, recursive=True)
