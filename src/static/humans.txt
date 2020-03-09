@@ -1,0 +1,1 @@
+Statica is a simple static site generator written in python.
