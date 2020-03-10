@@ -8,7 +8,7 @@ Example:
         $ python statica.py     # The default action is to watch and build
         $ python statica.py -c  # Clean the output
         $ python statica.py -b  # Manually build
-        $ python statica.py -r  # Run a development server for testing
+        $ python statica.py -s  # Run a development server for testing
 """
 
 import argparse
@@ -19,18 +19,15 @@ import time
 from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
+import htmlmin
+from decouple import config, Csv
 from jinja2 import Environment, PackageLoader
 from markdown2 import markdown
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
-from decouple import config, Csv
 
-#
-# Project Settings
-#
-SERVER_HOST=config('SERVER_HOST', default="localhost", cast=str)
-SERVER_PORT=config('SERVER_PORT', default=8000, cast=int)
-
+SERVER_HOST = config('SERVER_HOST', default="localhost", cast=str)
+SERVER_PORT = config('SERVER_PORT', default=8000, cast=int)
 SRC_FOLDER = config('SRC_FOLDER', default="src", cast=str)
 OUTPUT_PATH = config('OUTPUT_PATH', default="dist", cast=str)
 INPUT_PATH = config('INPUT_PATH', default="src/content", cast=str)
@@ -38,23 +35,16 @@ STATIC_FOLDER = config('STATIC_FOLDER', default="src/static", cast=str)
 TEMPLATES_FOLDER = config('TEMPLATES_FOLDER', default="src/templates", cast=str)
 ASSETS_INPUT_PATH = config('ASSETS_INPUT_PATH', default="src/assets", cast=str)
 ASSETS_OUTPUT_PATH = config('ASSETS_OUTPUT_PATH', default="dist/assets", cast=str)
-SECTIONS=config('SECTIONS', default="", cast=Csv())
+SECTIONS = config('SECTIONS', default="", cast=Csv())
 
-
-#
-# Logging
-#
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 handler = logging.FileHandler('statica.log')
 handler.setLevel(logging.INFO)
 logger.addHandler(handler)
 
-#
-# Command Line Args
-#
 parser = argparse.ArgumentParser()
-parser.add_argument("-r", "--run", action='store_true', help="Run development server")
+parser.add_argument("-s", "--server", action='store_true', help="Run development server")
 parser.add_argument("-b", "--build", action='store_true', help="Generate site contents")
 parser.add_argument("-c", "--clean", action='store_true', help="Clean output dir")
 parser.add_argument("-w", "--watch", action='store_true', help="Watch for changes then build")
@@ -87,6 +77,9 @@ class Statica():
         except OSError as e:
             print('Files not copied. Error: %s' % e)
 
+    def __get_compressed_html(self, html):
+        return htmlmin.minify(html, remove_empty_space=True, remove_comments=True)
+
     def __build_content(self, template, input, output, list_template=None):
         unprocessed_items = {}
         for markdown_post in os.listdir(input):
@@ -116,33 +109,33 @@ class Statica():
                 'content': unprocessed_items[item],
                 'title': item_metadata['title'],
                 'date': item_metadata['date'],
-                'tags': item_metadata.get('tags', "").strip().split(','),
+                'tags': [x.strip() for x in item_metadata.get('tags', "").split(',')],
+                'images': [x.strip() for x in item_metadata.get('images', "").split(',')],
+                'thumbnail': item_metadata.get('thumbnail', ""),
+                'website': item_metadata.get('website', ""),
                 'slug': file_name
             }
 
             processed_items.append(item_data)
-            post_html = template.render(item=item_data)
-            post_file_path = f"{output}/{file_name}.html"
+            item_content = template.render(item=item_data)
+            item_file_path = f"{output}/{file_name}.html"
 
-            os.makedirs(os.path.dirname(post_file_path), exist_ok=True)
-            with open(post_file_path, 'w') as file:
-                file.write(post_html)
+            os.makedirs(os.path.dirname(item_file_path), exist_ok=True)
+            with open(item_file_path, 'w') as file:
+                file.write(self.__get_compressed_html(item_content))
 
         if list_template:
             list_content = list_template.render(items=processed_items)
             with open(f"{output}/index.html", 'w') as file:
-                file.write(list_content)
+                file.write(self.__get_compressed_html(list_content))
 
         return processed_items
 
     def build(self):
         self.clean()
         logger.info('Building site...')
-
         env = Environment(loader=PackageLoader('statica', TEMPLATES_FOLDER))
-        #
-        # Build sections (i.e. blog, news, events, etc)
-        #
+
         items = {}
         for section in SECTIONS:
             if section == "pages":
@@ -154,15 +147,12 @@ class Statica():
                                                       f"{INPUT_PATH}/{section}",
                                                       f"{OUTPUT_PATH}/{section}",
                                                       env.get_template(f"{section}_list.html"))
-        #
-        # Homepage Index
-        #
-        home_html = env.get_template('home.html').render(items=items, splitFile=os.path.splitext)
 
+        home_content = env.get_template('home.html').render(items=items, splitFile=os.path.splitext)
         with open(f"{OUTPUT_PATH}/index.html", 'w') as file:
-            file.write(home_html)
+            file.write(self.__get_compressed_html(home_content))
 
-    def run(self):
+    def server(self):
         logger.info("Starting server...")
         web_dir = os.path.join(os.path.dirname(__file__), OUTPUT_PATH)
         os.chdir(web_dir)
@@ -191,7 +181,7 @@ class Statica():
         my_observer.start()
         try:
             while True:
-                time.sleep(1)
+                time.sleep(3)
         except KeyboardInterrupt:
             my_observer.stop()
             my_observer.join()
@@ -201,8 +191,8 @@ if __name__ == "__main__":
 
     statica = Statica()
 
-    if args.run:
-        statica.run()
+    if args.server:
+        statica.server()
     elif args.build:
         statica.build()
     elif args.clean:
