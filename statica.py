@@ -57,7 +57,7 @@ class StaticaChangeHandler(FileSystemEventHandler):
         self.statica = statica
 
     def on_any_event(self, event):
-        logger.info(f"Change detected")
+        logger.info("Change detected: %s", event)
         statica.build()
 
 
@@ -106,14 +106,15 @@ class Statica():
                 continue
 
             item_data = {
-                'content': unprocessed_items[item],
-                'title': item_metadata['title'],
-                'date': item_metadata['date'],
-                'tags': [x.strip() for x in item_metadata.get('tags', "").split(',')],
-                'images': [x.strip() for x in item_metadata.get('images', "").split(',')],
-                'thumbnail': item_metadata.get('thumbnail', ""),
-                'website': item_metadata.get('website', ""),
-                'slug': file_name
+                "content": unprocessed_items[item],
+                "title": item_metadata["title"],
+                "date": item_metadata["date"],
+                "tags": [x.strip() for x in item_metadata.get("tags", "").split(",")],
+                "images": [x.strip() for x in item_metadata.get("images", "").split(",")],
+                "thumbnail": item_metadata.get("thumbnail", ""),
+                "website": item_metadata.get("website", ""),
+                "subtitle": item_metadata.get("subtitle", ""),
+                "slug": file_name
             }
 
             processed_items.append(item_data)
@@ -132,6 +133,7 @@ class Statica():
         return processed_items
 
     def build(self):
+        startTime = datetime.now()
         self.clean()
         logger.info('Building site...')
         env = Environment(loader=PackageLoader('statica', TEMPLATES_FOLDER))
@@ -151,6 +153,7 @@ class Statica():
         home_content = env.get_template('home.html').render(items=items, splitFile=os.path.splitext)
         with open(f"{OUTPUT_PATH}/index.html", 'w') as file:
             file.write(self.__get_compressed_html(home_content))
+        logger.info(f"Build time: {datetime.now() - startTime}")
 
     def server(self):
         logger.info("Starting server...")
