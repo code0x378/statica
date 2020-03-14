@@ -37,19 +37,7 @@ ASSETS_INPUT_PATH = config('ASSETS_INPUT_PATH', default="src/assets", cast=str)
 ASSETS_OUTPUT_PATH = config('ASSETS_OUTPUT_PATH', default="dist/assets", cast=str)
 SECTIONS = config('SECTIONS', default="", cast=Csv())
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
-handler = logging.FileHandler('statica.log')
-handler.setLevel(logging.INFO)
-logger.addHandler(handler)
-
-parser = argparse.ArgumentParser()
-parser.add_argument("-s", "--server", action='store_true', help="Run development server")
-parser.add_argument("-b", "--build", action='store_true', help="Generate site contents")
-parser.add_argument("-c", "--clean", action='store_true', help="Clean output dir")
-parser.add_argument("-w", "--watch", action='store_true', help="Watch for changes then build")
-args = parser.parse_args()
-
 
 class StaticaChangeHandler(FileSystemEventHandler):
 
@@ -58,7 +46,7 @@ class StaticaChangeHandler(FileSystemEventHandler):
 
     def on_any_event(self, event):
         logger.info("Change detected: %s", event)
-        statica.build()
+        self.statica.build()
 
 
 class Statica():
@@ -190,7 +178,19 @@ class Statica():
             my_observer.join()
 
 
-if __name__ == "__main__":
+def main():
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger()
+    handler = logging.FileHandler('statica.log')
+    handler.setLevel(logging.INFO)
+    logger.addHandler(handler)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-s", "--server", action='store_true', help="Run development server")
+    parser.add_argument("-b", "--build", action='store_true', help="Generate site contents")
+    parser.add_argument("-c", "--clean", action='store_true', help="Clean output dir")
+    parser.add_argument("-w", "--watch", action='store_true', help="Watch for changes then build")
+    args = parser.parse_args()
 
     statica = Statica()
 
@@ -203,3 +203,7 @@ if __name__ == "__main__":
     else:
         statica.build()
         statica.watch()
+
+
+if __name__ == "__main__":
+    main()
