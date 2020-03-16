@@ -1,0 +1,25 @@
+[build-system]
+requires = ["flit_core >=2,<3"]
+build-backend = "flit_core.buildapi"
+
+[tool.flit.metadata]
+module = "statica"
+author = "Jeff Smith"
+author-email = "jeff@code0x378.com"
+home-page = "https://www.code0x378.com/"
+requires-python=">=3"
+classifiers = [
+"License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+"Programming Language :: Python :: 3",
+"Topic :: Internet :: WWW/HTTP :: Site Management"
+]
+description-file="README.md"
+requires = [
+    "htmlmin",
+    "Jinja2",
+    "markdown2",
+    "MarkupSafe",
+    "pathtools",
+    "python-decouple",
+    "watchdog"
+]
