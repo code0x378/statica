@@ -17,3 +17,31 @@ Most existing static site generators are too complex for simple me.
 * I don’t need plugins.
 * I don’t need i18n.
 * I don’t want to be social.
+
+# Requirements 
+
+* python3
+
+# Installation
+
+```
+pip3 install statica
+```
+
+# Setup a new site
+
+```
+statica --init <name>
+```
+
+# Run the build in dev server
+
+```
+statica --server
+```
+
+# Watch for changes and rebuild project
+
+```
+statica --watch
+```

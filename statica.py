@@ -11,6 +11,8 @@ Example:
         $ python statica.py -s  # Run a development server for testing
 """
 
+__version__ = '0.0.1'
+
 import argparse
 import logging
 import os
