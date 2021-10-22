@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """Statica
 
@@ -6,49 +6,72 @@ Statica is a simple SSG (Static Site Generator) using python 3, jinja2 and a few
 
 Example:
         $ python statica.py     # The default action is to watch and build
+        $ python statica.py -d  # The sub-folder to use, i.e. example.com (required)
         $ python statica.py -c  # Clean the output
         $ python statica.py -b  # Manually build
         $ python statica.py -s  # Run a development server for testing
 """
 
-__version__ = '0.0.1'
-
 import argparse
 import logging
 import os
+import sys
 import shutil
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+import xml.etree.cElementTree as et
+# from md2gemini import md2gemini
 
 import htmlmin
-from decouple import config, Csv
+from decouple import Config, RepositoryEnv, Csv
 from jinja2 import Environment, PackageLoader
 from markdown2 import markdown
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-SERVER_HOST = config('SERVER_HOST', default="localhost", cast=str)
-SERVER_PORT = config('SERVER_PORT', default=8000, cast=int)
-SRC_FOLDER = config('SRC_FOLDER', default="src", cast=str)
-OUTPUT_PATH = config('OUTPUT_PATH', default="dist", cast=str)
-INPUT_PATH = config('INPUT_PATH', default="src/content", cast=str)
-STATIC_FOLDER = config('STATIC_FOLDER', default="src/static", cast=str)
-TEMPLATES_FOLDER = config('TEMPLATES_FOLDER', default="src/templates", cast=str)
-ASSETS_INPUT_PATH = config('ASSETS_INPUT_PATH', default="src/assets", cast=str)
-ASSETS_OUTPUT_PATH = config('ASSETS_OUTPUT_PATH', default="dist/assets", cast=str)
-SECTIONS = config('SECTIONS', default="", cast=Csv())
+parser = argparse.ArgumentParser()
+parser.add_argument("-d", "--domain", nargs="?", help="Domain to use")
+parser.add_argument("-s", "--server", action='store_true', help="Run development server")
+parser.add_argument("-b", "--build", action='store_true', help="Generate site contents")
+parser.add_argument("-c", "--clean", action='store_true', help="Clean output dir")
+parser.add_argument("-w", "--watch", action='store_true', help="Watch for changes then build")
+args = parser.parse_args()
+
+DOTENV_FILE = f"./{args.domain}/.env"
+env_config = Config(RepositoryEnv(DOTENV_FILE))
+
+SERVER_HOST = env_config('SERVER_HOST', default="localhost", cast=str)
+SERVER_PORT = env_config('SERVER_PORT', default=8000, cast=int)
+SRC_FOLDER = env_config('SRC_FOLDER', default="src", cast=str)
+OUTPUT_PATH = env_config('OUTPUT_PATH', default="dist", cast=str)
+INPUT_PATH = env_config('INPUT_PATH', default="src/content", cast=str)
+STATIC_FOLDER = env_config('STATIC_FOLDER', default="src/static", cast=str)
+TEMPLATES_FOLDER = env_config('TEMPLATES_FOLDER', default="src/templates", cast=str)
+ASSETS_INPUT_PATH = env_config('ASSETS_INPUT_PATH', default="src/assets", cast=str)
+ASSETS_OUTPUT_PATH = env_config('ASSETS_OUTPUT_PATH', default="dist/assets", cast=str)
+SECTIONS = env_config('SECTIONS', default="", cast=Csv())
 
 logger = logging.getLogger()
+root = et.Element("urlset", xmlns="http://www.sitemaps.org/schemas/sitemap/0.9")
+
 
 class StaticaChangeHandler(FileSystemEventHandler):
+    TIME_DELAY = 3
 
     def __init__(self, statica):
         self.statica = statica
+        self.now = datetime.now()
+        self.previous = datetime.now() - timedelta(seconds=self.TIME_DELAY)
 
     def on_any_event(self, event):
+        # if self.now - self.previous > timedelta(seconds=self.TIME_DELAY):
         logger.info("Change detected: %s", event)
+        self.previous = self.now
+        self.now = datetime.now()
         self.statica.build()
+    # else:
+    #     self.now = datetime.now()
 
 
 class Statica():
@@ -72,11 +95,15 @@ class Statica():
 
     def __build_content(self, template, input, output, list_template=None):
         unprocessed_items = {}
+        # gemini_items = {}
+        env = Environment(loader=PackageLoader('statica', TEMPLATES_FOLDER))
         for markdown_post in os.listdir(input):
             file_path = os.path.join(input, markdown_post)
 
-            with open(file_path, 'r', encoding="utf8", errors='ignore') as file:
-                unprocessed_items[markdown_post] = markdown(file.read(), extras=['metadata'])
+            with open(file_path, 'r', encoding="utf-8") as file:
+                contents = file.read()
+            # gemini_items[markdown_post] = md2gemini(contents, frontmatter=True)
+            unprocessed_items[markdown_post] = markdown(contents, extras=['metadata'])
 
         unprocessed_items = {
             item: unprocessed_items[item] for item in
@@ -104,26 +131,38 @@ class Statica():
                 "thumbnail": item_metadata.get("thumbnail", ""),
                 "website": item_metadata.get("website", ""),
                 "subtitle": item_metadata.get("subtitle", ""),
+                "bannerImage": item_metadata.get("bannerImage", ""),
                 "slug": file_name
             }
 
+            url = et.SubElement(root, "url")
+            et.SubElement(url, "loc").text = f"https://{args.domain}/{item_data['slug']}"
+            et.SubElement(url, "changefreq").text = "monthly"
+            et.SubElement(url, "lastmod").text = datetime.today().strftime('%Y-%m-%d')
             processed_items.append(item_data)
-            item_content = template.render(item=item_data)
-            item_file_path = f"{output}/{file_name}.html"
+            item_content = env.get_template(f"{template}.html").render(item=item_data, datetime=datetime)
+            item_file_path = f"{output}/{file_name}/index.html"
+            # gemini_file_path = f"{output}/gemini/{file_name}.gmi"
 
             os.makedirs(os.path.dirname(item_file_path), exist_ok=True)
-            with open(item_file_path, 'w') as file:
+            # os.makedirs(os.path.dirname(gemini_file_path), exist_ok=True)
+            # with open(gemini_file_path, 'w', encoding="utf-8") as file:
+            #     file.write(gemini_items[item])
+            with open(item_file_path, 'w', encoding="utf-8") as file:
                 file.write(self.__get_compressed_html(item_content))
 
         if list_template:
-            list_content = list_template.render(items=processed_items)
-            with open(f"{output}/index.html", 'w') as file:
-                file.write(self.__get_compressed_html(list_content))
-
+            list_content_html = env.get_template(f"{list_template}.html").render(items=processed_items,
+                                                                                 datetime=datetime)
+            list_content_gmi = env.get_template(f"{list_template}.gmi").render(items=processed_items, datetime=datetime)
+            with open(f"{output}/index.html", 'w', encoding="utf-8") as file:
+                file.write(self.__get_compressed_html(list_content_html))
+            with open(f"{output}/index.gmi", 'w', encoding="utf-8") as file:
+                file.write(list_content_gmi)
         return processed_items
 
     def build(self):
-        startTime = datetime.now()
+        start_time = datetime.now()
         self.clean()
         logger.info('Building site...')
         env = Environment(loader=PackageLoader('statica', TEMPLATES_FOLDER))
@@ -131,19 +170,25 @@ class Statica():
         items = {}
         for section in SECTIONS:
             if section == "pages":
-                items[section] = self.__build_content(env.get_template('pages.html'),
+                items[section] = self.__build_content("pages",
                                                       f"{INPUT_PATH}/{section}",
                                                       f"{OUTPUT_PATH}")
             else:
-                items[section] = self.__build_content(env.get_template(f"{section}_show.html"),
+                items[section] = self.__build_content(f"{section}_show",
                                                       f"{INPUT_PATH}/{section}",
                                                       f"{OUTPUT_PATH}/{section}",
-                                                      env.get_template(f"{section}_list.html"))
+                                                      f"{section}_list")
 
-        home_content = env.get_template('home.html').render(items=items, splitFile=os.path.splitext)
+        home_content = env.get_template('home.html').render(items=items, splitFile=os.path.splitext, datetime=datetime)
         with open(f"{OUTPUT_PATH}/index.html", 'w') as file:
             file.write(self.__get_compressed_html(home_content))
-        logger.info(f"Build time: {datetime.now() - startTime}")
+
+        with open(f"{OUTPUT_PATH}/sitemap.xml", 'wb') as f:
+            tree = et.ElementTree(root)
+            f.write(b'<?xml version="1.0" encoding="UTF-8"?>');
+            tree.write(f, xml_declaration=False, encoding='utf-8')
+
+        logger.info(f"Build time: {datetime.now() - start_time}")
 
     def server(self):
         logger.info("Starting server...")
@@ -180,19 +225,12 @@ class Statica():
             my_observer.join()
 
 
-def main():
+def main(args):
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger()
     handler = logging.FileHandler('statica.log')
     handler.setLevel(logging.INFO)
     logger.addHandler(handler)
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-s", "--server", action='store_true', help="Run development server")
-    parser.add_argument("-b", "--build", action='store_true', help="Generate site contents")
-    parser.add_argument("-c", "--clean", action='store_true', help="Clean output dir")
-    parser.add_argument("-w", "--watch", action='store_true', help="Watch for changes then build")
-    args = parser.parse_args()
 
     statica = Statica()
 
@@ -208,4 +246,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(args)
